@@ -259,11 +259,10 @@ class ScriptureMap:
             if text != "":
                 print(f"-- {ref} --\n{text}\n")
 
-    def to_sql(self, conn, cursor):
+    def to_sql(self, conn, cursor, table_name='scriptures'):
         """
 
         """
-        table_name = 'scriptures'
         for data in self.scriptures:
             ref = data['ref']
             text = data['text']
