@@ -37,8 +37,11 @@ def limitCharacters(v):
 		messages.append()
 	return messages
 
-def getProfilePic():
-	return 'https://ldsblogs.com/files/2010/05/Jesus-Door-Knock-Mormon.jpg'
+def getProfilePic(warning=False):
+	if warning:
+		return "https://upload.wikimedia.org/wikipedia/commons/thumb/1/17/Warning.svg/1109px-Warning.svg.png"
+	else:
+		return 'https://ldsblogs.com/files/2010/05/Jesus-Door-Knock-Mormon.jpg'
 
 def getScriptures():
 	with open(scripture_file, 'r') as f:
@@ -51,8 +54,15 @@ def saveList(verse_list):
 		json.dump(verse_list, outfile, indent=4)
 
 def getVerseFromList(debug=False):
+	warning = False
 	verse_list = getScriptures()
 	choice = random.randint(0, len(verse_list)-1)
+	if len(verse_list) < verse_warning_num:
+		warning = f"There are {len(verse_list)} verses remaining. Consider adding more."
+	elif len(verse_list) < critical_warning_num:
+		warning = f"There are {len(verse_list)} verses remaining. Please add more. If the verse count hits 1. All verses will be reset."
+	elif len(verse_list) == 1:
+		pass # Not active for list
 	if not debug:
 		v = verse_list.pop(choice)
 		# print(verse_list)
@@ -66,9 +76,10 @@ def getVerseFromList(debug=False):
 	# choice = rc(verse_list)
 	# v = verses[choice]
 	# del verses[choice]
-	return v
+	return v, warning
 
 def getVerseFromDatabase(debug=False):
+	warning = False
 	conn = mysql.connect(user=DB_USERNAME, password=DB_PASSWORD, database=DB_NAME)
 	cursor = conn.cursor(buffered=True)
 	cursor.execute(SQL_STATEMENT)
@@ -79,6 +90,15 @@ def getVerseFromDatabase(debug=False):
 	cursor.execute(f"UPDATE `{TABLE_NAME}` SET `is_used` = 1 WHERE `id` = {ID}")
 	conn.commit()
 	v = {"text": text, "verse": verse}
+	# When using the DB method, verse_list.pop() 
+	# is not used, so the verse_list is 1 item longer
+	# hence len(verse_list) - 1 is used.
+	if len(verse_list) - 1 < verse_warning_num:
+		warning = f"There are {len(verse_list)} verses remaining. Consider adding more."
+	elif len(verse_list) - 1 < critical_warning_num:
+		warning = f"There are {len(verse_list)} verses remaining. Please add more. If the verse count hits 1. All verses will be reset."
+	elif len(verse_list) == 0:
+		cursor.execute(f"UPDATE `{TABLE_NAME}` SET `is_used` = 0 WHERE `is_used` = 1")
 	if not debug:
 		# print(verse_list)
 		pass
@@ -87,7 +107,7 @@ def getVerseFromDatabase(debug=False):
 		print(f"Printing scripture to terminal output: ", end="")
 		sys.exit(v)
 
-	return v
+	return v, warning
 
 def reset_from_master():
 	with open(master_file, 'r') as f:
@@ -98,12 +118,10 @@ def reset_from_master():
 
 def main(debug=False, send_method="slack", use_db=False):
 	messages = []
-	if '--test' in sys.argv:
-		sys.exit('This is a test message')
 	if use_db:
-		v = getVerseFromDatabase(debug=debug)
+		v, warning = getVerseFromDatabase(debug=debug)
 	else:
-		v = getVerseFromList(debug=debug)
+		v, warning = getVerseFromList(debug=debug)
 	profile_pic = getProfilePic()
 	messages.append(v)
 	# messages = limitCharacters(v) # NOT CURRENTLY FUNCTIONAL
@@ -115,10 +133,13 @@ def main(debug=False, send_method="slack", use_db=False):
 			sendTextMessage(text, verse)
 		else:
 			sendSlackMessage(text, verse, profile_pic, channel=CHANNEL)
+	if warning:
+		warning_pic = getProfilePic(warning=True)
+		sendSlackMessage(warning, "Info", warning_pic, channel=CHANNEL)
 
 
 if __name__ == '__main__':
-	global scripture_file, DB_USERNAME, DB_PASSWORD, DB_NAME, SQL_STATEMENT, TABLE_NAME
+	global scripture_file, DB_USERNAME, DB_PASSWORD, DB_NAME, SQL_STATEMENT, TABLE_NAME, verse_warning_num, critical_warning_num
 	TOKEN = None
 	CHANNEL = None
 	send_method = None
@@ -127,6 +148,8 @@ if __name__ == '__main__':
 	debug = False
 	send_method = "slack"
 	data_source = "json"
+	verse_warning_num = 25
+	critical_warning_num = 5
 	
 	for idx, arg in enumerate(sys.argv):
 		if arg in ['-h', '--help']:
